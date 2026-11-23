@@ -59,8 +59,10 @@
       setStatus('');
     });
     call.on('close', function () {
+      // No automatic re-calling: a parent has to approve each call on the phone.
       remote.srcObject = null;
-      scheduleRetry('The call ended. Trying again…');
+      setStatus('The call ended or was not answered. Tap Start to try again.');
+      startButton.style.display = '';
     });
     call.on('error', function () { scheduleRetry('Could not reach the baby’s room. Trying again…'); });
   }

@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video call</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; font-family: -apple-system, sans-serif; overflow: hidden; }
+  #remote { position: fixed; inset: 0; width: 100vw; height: 100vh; object-fit: contain; background: #000; }
+  #local { position: fixed; right: 12px; bottom: 60px; width: 28vw; max-width: 160px; border-radius: 8px; background: #111; }
+  #status { position: fixed; left: 0; right: 0; top: 40%; text-align: center; color: #ddd; padding: 0 16px; font-size: 20px; }
+  #start { position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); font-size: 22px; padding: 16px 28px; border: 0; border-radius: 12px; background: #2a7; color: #fff; }
+</style>
+</head>
+<body>
+<video id="remote" autoplay playsinline></video>
+<video id="local" autoplay playsinline muted></video>
+<div id="status">Tap Start to call the baby's room.</div>
+<button id="start">Start call</button>
+<script src="peerjs.min.js"></script>
+<script>
+  // Grandparents open this page with the baby's ID after '#', e.g. call.html#babycall-...
+  // The ID is never sent to a server; it only lives in the link.
+  var babyId = location.hash.slice(1);
+  var remote = document.getElementById('remote');
+  var local = document.getElementById('local');
+  var statusText = document.getElementById('status');
+  var startButton = document.getElementById('start');
+  var peer = null;
+  var localStream = null;
+  var retryTimer = null;
+
+  function setStatus(text) { statusText.textContent = text; }
+
+  function getCameraAndMic() {
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
+      .catch(function () { return navigator.mediaDevices.getUserMedia({ audio: true }); });
+  }
+
+  // A random key stored on this phone, so the baby's phone can recognise it again.
+  function deviceKey() {
+    try {
+      var key = localStorage.getItem('babycall-device-key');
+      if (!key) {
+        key = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem('babycall-device-key', key);
+      }
+      return key;
+    } catch (e) { return null; }
+  }
+
+  function callBaby() {
+    if (!peer || !localStream) return;
+    setStatus('Calling…');
+    var call = peer.call(babyId, localStream, { metadata: { deviceKey: deviceKey() } });
+    call.on('stream', function (stream) {
+      remote.srcObject = stream;
+      setStatus('');
+    });
+    call.on('close', function () {
+      remote.srcObject = null;
+      scheduleRetry('The call ended. Trying again…');
+    });
+    call.on('error', function () { scheduleRetry('Could not reach the baby’s room. Trying again…'); });
+  }
+
+  function scheduleRetry(message) {
+    setStatus(message);
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(callBaby, 5000);
+  }
+
+  startButton.addEventListener('click', function () {
+    if (!babyId) { setStatus('This link is missing the baby’s ID.'); return; }
+    startButton.style.display = 'none';
+    setStatus('Starting camera…');
+    getCameraAndMic().then(function (stream) {
+      localStream = stream;
+      local.srcObject = stream;
+      peer = new Peer({ debug: 0 });
+      peer.on('open', callBaby);
+      peer.on('error', function () { scheduleRetry('Connection problem. Trying again…'); });
+    }).catch(function () {
+      setStatus('Allow the camera and microphone in Settings, then reload this page.');
+      startButton.style.display = '';
+    });
+  });
+</script>
+</body>
+</html>

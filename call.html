@@ -19,6 +19,7 @@
 <video id="remote" autoplay playsinline></video>
 <video id="local" autoplay playsinline muted></video>
 <div id="status">Tap Start to call the baby's room.</div>
+<div id="debug" style="position:fixed;left:0;right:0;bottom:2%;text-align:center;color:#8a8;font-size:13px;"></div>
 <button id="start" class="big">Start call</button>
 <button id="hangup" class="big">Hang up</button>
 <script src="peerjs.min.js"></script>
@@ -71,11 +72,27 @@
     setStatus(message);
   }
 
+  // Small line at the top showing how the connection is doing, in case video doesn't appear.
+  function watchCall(call) {
+    var debug = document.getElementById('debug');
+    var timer = setInterval(function () {
+      var pc = call.peerConnection;
+      if (!pc) return;
+      debug.textContent = 'ice ' + pc.iceConnectionState + ' | conn ' + pc.connectionState +
+        ' | sending ' + pc.getSenders().filter(function (s) { return s.track; }).length +
+        ' | receiving ' + pc.getReceivers().filter(function (r) { return r.track; }).length +
+        ' | video ' + remote.videoWidth + 'x' + remote.videoHeight;
+      if (pc.connectionState === 'closed') { clearInterval(timer); debug.textContent = ''; }
+    }, 1000);
+    call.on('close', function () { clearInterval(timer); debug.textContent = ''; });
+  }
+
   function callBaby() {
     if (!peer || !localStream) return;
     setStatus('Calling… Waiting for the baby’s room to answer.');
     var call = peer.call(babyId, localStream, { metadata: { deviceKey: deviceKey() } });
     currentCall = call;
+    watchCall(call);
     call.on('stream', function (stream) {
       remote.srcObject = stream;
       setStatus('');

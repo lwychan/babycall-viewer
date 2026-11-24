@@ -95,7 +95,9 @@
     watchCall(call);
     call.on('stream', function (stream) {
       remote.srcObject = stream;
-      setStatus('');
+      // The baby's room answers at once but only shows its picture once a parent allows it.
+      setStatus('Connected. Waiting for a parent to allow the call…');
+      setTimeout(function () { if (currentCall === call) setStatus(''); }, 15000);
     });
     call.on('close', function () {
       // No automatic re-calling: a parent has to approve each call on the phone.

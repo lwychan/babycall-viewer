@@ -8,16 +8,19 @@
   :root { color-scheme: dark; }
   html, body { margin: 0; height: 100%; background: #000; font-family: -apple-system, sans-serif; overflow: hidden; }
   #remote { position: fixed; inset: 0; width: 100vw; height: 100vh; object-fit: contain; background: #000; }
-  #local { position: fixed; right: 12px; bottom: 60px; width: 28vw; max-width: 160px; border-radius: 8px; background: #111; }
+  #local { position: fixed; right: 12px; top: 12px; width: 28vw; max-width: 160px; border-radius: 8px; background: #111; }
   #status { position: fixed; left: 0; right: 0; top: 40%; text-align: center; color: #ddd; padding: 0 16px; font-size: 20px; }
-  #start { position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); font-size: 22px; padding: 16px 28px; border: 0; border-radius: 12px; background: #2a7; color: #fff; }
+  .big { position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); font-size: 24px; padding: 18px 36px; border: 0; border-radius: 14px; color: #fff; }
+  #start { background: #2a7; }
+  #hangup { display: none; background: #c33; }
 </style>
 </head>
 <body>
 <video id="remote" autoplay playsinline></video>
 <video id="local" autoplay playsinline muted></video>
 <div id="status">Tap Start to call the baby's room.</div>
-<button id="start">Start call</button>
+<button id="start" class="big">Start call</button>
+<button id="hangup" class="big">Hang up</button>
 <script src="peerjs.min.js"></script>
 <script>
   // Grandparents open this page with the baby's ID after '#', e.g. call.html#babycall-...
@@ -27,8 +30,10 @@
   var local = document.getElementById('local');
   var statusText = document.getElementById('status');
   var startButton = document.getElementById('start');
+  var hangupButton = document.getElementById('hangup');
   var peer = null;
   var localStream = null;
+  var currentCall = null;
   var retryTimer = null;
 
   function setStatus(text) { statusText.textContent = text; }
@@ -50,19 +55,37 @@
     } catch (e) { return null; }
   }
 
+  // Ends everything: the call, the connection, and this phone's camera and mic.
+  function finishCall(message) {
+    clearTimeout(retryTimer);
+    if (currentCall) { try { currentCall.close(); } catch (e) {} currentCall = null; }
+    if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+    if (localStream) {
+      localStream.getTracks().forEach(function (track) { track.stop(); });
+      localStream = null;
+    }
+    local.srcObject = null;
+    remote.srcObject = null;
+    hangupButton.style.display = 'none';
+    startButton.style.display = '';
+    setStatus(message);
+  }
+
   function callBaby() {
     if (!peer || !localStream) return;
-    setStatus('Calling…');
+    setStatus('Calling… Waiting for the baby’s room to answer.');
     var call = peer.call(babyId, localStream, { metadata: { deviceKey: deviceKey() } });
+    currentCall = call;
     call.on('stream', function (stream) {
       remote.srcObject = stream;
       setStatus('');
     });
     call.on('close', function () {
       // No automatic re-calling: a parent has to approve each call on the phone.
-      remote.srcObject = null;
-      setStatus('The call ended or was not answered. Tap Start to try again.');
-      startButton.style.display = '';
+      if (currentCall === call) {
+        currentCall = null;
+        finishCall('The call ended or was not answered. Tap Start to try again.');
+      }
     });
     call.on('error', function () { scheduleRetry('Could not reach the baby’s room. Trying again…'); });
   }
@@ -80,6 +103,7 @@
     getCameraAndMic().then(function (stream) {
       localStream = stream;
       local.srcObject = stream;
+      hangupButton.style.display = 'block';
       peer = new Peer({ debug: 0 });
       peer.on('open', callBaby);
       peer.on('error', function () { scheduleRetry('Connection problem. Trying again…'); });
@@ -87,6 +111,10 @@
       setStatus('Allow the camera and microphone in Settings, then reload this page.');
       startButton.style.display = '';
     });
+  });
+
+  hangupButton.addEventListener('click', function () {
+    finishCall('Call ended. Tap Start to call again.');
   });
 </script>
 </body>
